@@ -1,4 +1,7 @@
+import os
 import logging
+import sounddevice
+import keyring
 from typing import Tuple, List, Optional
 
 from PyQt6 import QtGui
@@ -32,6 +35,7 @@ from buzz.widgets.icon import BUZZ_ICON_PATH
 from buzz.widgets.import_url_dialog import ImportURLDialog
 from buzz.widgets.main_window_toolbar import MainWindowToolbar
 from buzz.widgets.menu_bar import MenuBar
+from buzz.widgets.snap_notice import SnapNotice
 from buzz.widgets.preferences_dialog.models.preferences import Preferences
 from buzz.widgets.transcriber.file_transcriber_widget import FileTranscriberWidget
 from buzz.widgets.transcription_task_folder_watcher import (
@@ -137,6 +141,26 @@ class MainWindow(QMainWindow):
         self.folder_watcher.task_found.connect(self.add_task)
         self.folder_watcher.find_tasks()
 
+        self.transcription_viewer_widget = None
+
+        if os.environ.get('SNAP_NAME', '') == 'buzz':
+            logging.debug("Running in a snap environment")
+            self.check_linux_permissions()
+
+    def check_linux_permissions(self):
+        devices = sounddevice.query_devices()
+        input_devices = [device for device in devices if device['max_input_channels'] > 0]
+
+        if len(input_devices) == 0:
+            snap_notice = SnapNotice(self)
+            snap_notice.show()
+
+        try:
+            _ = keyring.get_password(APP_NAME, username="random")
+        except Exception:
+            snap_notice = SnapNotice(self)
+            snap_notice.show()
+
     def on_preferences_changed(self, preferences: Preferences):
         self.preferences = preferences
         self.save_preferences(preferences)
@@ -195,14 +219,23 @@ class MainWindow(QMainWindow):
         if len(selected_rows) == 0:
             return
 
-        reply = QMessageBox.question(
-            self,
-            _("Clear History"),
+        question_box = QMessageBox()
+        question_box.setWindowTitle(_("Clear History"))
+        question_box.setIcon(QMessageBox.Icon.Question)
+        question_box.setText(
             _(
                 "Are you sure you want to delete the selected transcription(s)? "
                 "This action cannot be undone."
             ),
         )
+        question_box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        question_box.button(QMessageBox.StandardButton.Yes).setText(_("Ok"))
+        question_box.button(QMessageBox.StandardButton.No).setText(_("Cancel"))
+
+        reply = question_box.exec()
+
         if reply == QMessageBox.StandardButton.Yes:
             self.table_widget.delete_transcriptions(selected_rows)
 
@@ -245,6 +278,8 @@ class MainWindow(QMainWindow):
             self.on_openai_access_token_changed
         )
         file_transcriber_window.show()
+        file_transcriber_window.raise_()
+        file_transcriber_window.activateWindow()
 
     @staticmethod
     def on_openai_access_token_changed(access_token: str):
@@ -325,14 +360,14 @@ class MainWindow(QMainWindow):
         self.open_transcription_viewer(transcription)
 
     def open_transcription_viewer(self, transcription: Transcription):
-        transcription_viewer_widget = TranscriptionViewerWidget(
+        self.transcription_viewer_widget = TranscriptionViewerWidget(
             transcription=transcription,
             transcription_service=self.transcription_service,
             shortcuts=self.shortcuts,
             parent=self,
             flags=Qt.WindowType.Window,
         )
-        transcription_viewer_widget.show()
+        self.transcription_viewer_widget.show()
 
     def add_task(self, task: FileTranscriptionTask):
         self.transcription_service.create_transcription(task)
@@ -374,6 +409,10 @@ class MainWindow(QMainWindow):
         self.transcriber_worker.stop()
         self.transcriber_thread.quit()
         self.transcriber_thread.wait()
+
+        if self.transcription_viewer_widget is not None:
+            self.transcription_viewer_widget.close()
+
         super().closeEvent(event)
 
     def save_geometry(self):

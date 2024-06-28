@@ -20,11 +20,18 @@ class Task(enum.Enum):
     TRANSCRIBE = "transcribe"
 
 
+TASK_LABEL_TRANSLATIONS = {
+    Task.TRANSLATE: _("Translate"),
+    Task.TRANSCRIBE: _("Tanscribe"),
+}
+
+
 @dataclass
 class Segment:
     start: int  # start time in ms
     end: int  # end time in ms
     text: str
+    translation: str = ""
 
 
 LANGUAGES = {
@@ -142,6 +149,9 @@ class TranscriptionOptions:
     openai_access_token: str = field(
         default="", metadata=config(exclude=Exclude.ALWAYS)
     )
+    enable_llm_translation: bool = False
+    llm_prompt: str = ""
+    llm_model: str = ""
 
 
 def humanize_language(language: str) -> str:

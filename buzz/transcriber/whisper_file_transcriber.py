@@ -4,6 +4,7 @@ import logging
 import multiprocessing
 import re
 import sys
+import torch
 from multiprocessing.connection import Connection
 from threading import Thread
 from typing import Optional, List
@@ -11,9 +12,9 @@ from typing import Optional, List
 import tqdm
 from PyQt6.QtCore import QObject
 
-from buzz import transformers_whisper
 from buzz.conn import pipe_stderr
 from buzz.model_loader import ModelType
+from buzz.transformers_whisper import TransformersWhisper
 from buzz.transcriber.file_transcriber import FileTranscriber
 from buzz.transcriber.transcriber import FileTranscriptionTask, Segment
 
@@ -86,7 +87,10 @@ class WhisperFileTranscriber(FileTranscriber):
     ) -> None:
         with pipe_stderr(stderr_conn):
             if task.transcription_options.model.model_type == ModelType.HUGGING_FACE:
+                # TODO Find a way to emmit real progress
+                sys.stderr.write("0%\n")
                 segments = cls.transcribe_hugging_face(task)
+                sys.stderr.write("100%\n")
             elif (
                 task.transcription_options.model.model_type == ModelType.FASTER_WHISPER
             ):
@@ -104,7 +108,7 @@ class WhisperFileTranscriber(FileTranscriber):
 
     @classmethod
     def transcribe_hugging_face(cls, task: FileTranscriptionTask) -> List[Segment]:
-        model = transformers_whisper.load_model(task.model_path)
+        model = TransformersWhisper(task.model_path)
         language = (
             task.transcription_options.language
             if task.transcription_options.language is not None
@@ -114,13 +118,13 @@ class WhisperFileTranscriber(FileTranscriber):
             audio=task.file_path,
             language=language,
             task=task.transcription_options.task.value,
-            verbose=False,
         )
         return [
             Segment(
                 start=int(segment.get("start") * 1000),
                 end=int(segment.get("end") * 1000),
                 text=segment.get("text"),
+                translation=""
             )
             for segment in result.get("segments")
         ]
@@ -149,6 +153,7 @@ class WhisperFileTranscriber(FileTranscriber):
                                 start=int(word.start * 1000),
                                 end=int(word.end * 1000),
                                 text=word.word,
+                                translation=""
                             )
                         )
                 else:
@@ -157,6 +162,7 @@ class WhisperFileTranscriber(FileTranscriber):
                             start=int(segment.start * 1000),
                             end=int(segment.end * 1000),
                             text=segment.text,
+                            translation=""
                         )
                     )
 
@@ -165,7 +171,8 @@ class WhisperFileTranscriber(FileTranscriber):
 
     @classmethod
     def transcribe_openai_whisper(cls, task: FileTranscriptionTask) -> List[Segment]:
-        model = whisper.load_model(task.model_path)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model = whisper.load_model(task.model_path, device=device)
 
         if task.transcription_options.word_level_timings:
             stable_whisper.modify_model(model)
@@ -181,6 +188,7 @@ class WhisperFileTranscriber(FileTranscriber):
                     start=int(word.start * 1000),
                     end=int(word.end * 1000),
                     text=word.word.strip(),
+                    translation=""
                 )
                 for segment in result.segments
                 for word in segment.words
@@ -200,6 +208,7 @@ class WhisperFileTranscriber(FileTranscriber):
                 start=int(segment.get("start") * 1000),
                 end=int(segment.get("end") * 1000),
                 text=segment.get("text"),
+                translation=""
             )
             for segment in segments
         ]
@@ -226,6 +235,7 @@ class WhisperFileTranscriber(FileTranscriber):
                         start=segment.get("start"),
                         end=segment.get("end"),
                         text=segment.get("text"),
+                        translation=""
                     )
                     for segment in segments_dict
                 ]

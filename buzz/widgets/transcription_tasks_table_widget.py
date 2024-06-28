@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 from buzz.db.entity.transcription import Transcription
 from buzz.locale import _
 from buzz.settings.settings import Settings
-from buzz.transcriber.transcriber import FileTranscriptionTask
+from buzz.transcriber.transcriber import FileTranscriptionTask, Task, TASK_LABEL_TRANSLATIONS
 from buzz.widgets.record_delegate import RecordDelegate
 from buzz.widgets.transcription_record import TranscriptionRecord
 
@@ -59,7 +59,8 @@ def format_record_status_text(record: QSqlRecord) -> str:
     status = FileTranscriptionTask.Status(record.value("status"))
     match status:
         case FileTranscriptionTask.Status.IN_PROGRESS:
-            return f'{_("In Progress")} ({record.value("progress") :.0%})'
+            in_progress_label = _("In Progress")
+            return f'{in_progress_label} ({record.value("progress") :.0%})'
         case FileTranscriptionTask.Status.COMPLETED:
             status = _("Completed")
             started_at = record.value("time_started")
@@ -68,14 +69,14 @@ def format_record_status_text(record: QSqlRecord) -> str:
                 status += f" ({TranscriptionTasksTableWidget.format_timedelta(datetime.fromisoformat(completed_at) - datetime.fromisoformat(started_at))})"
             return status
         case FileTranscriptionTask.Status.FAILED:
-            return f'{_("Failed")} ({record.value("error_message")})'
+            failed_label = _("Failed")
+            return f'{failed_label} ({record.value("error_message")})'
         case FileTranscriptionTask.Status.CANCELED:
             return _("Canceled")
         case FileTranscriptionTask.Status.QUEUED:
             return _("Queued")
         case _:
             return ""
-
 
 column_definitions = [
     ColDef(
@@ -105,7 +106,7 @@ column_definitions = [
         column=Column.SOURCE,
         width=120,
         delegate=RecordDelegate(
-            text_getter=lambda record: record.value("task").capitalize()
+            text_getter=lambda record: TASK_LABEL_TRANSLATIONS[Task(record.value("task"))]
         ),
     ),
     ColDef(

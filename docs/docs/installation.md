@@ -28,8 +28,12 @@ Download and run the `Buzz-x.y.z.exe` file.
 ## Linux
 
 ```shell
-sudo apt-get install libportaudio2
+sudo apt-get install libportaudio2 libcanberra-gtk-module libcanberra-gtk3-module
 sudo snap install buzz
+sudo snap connect buzz:audio-record
+sudo snap connect buzz:password-manager-service
+sudo snap connect buzz:pulseaudio
+sudo snap connect buzz:removable-media
 ```
 
 [![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/buzz)

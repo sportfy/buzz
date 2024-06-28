@@ -1,21 +1,28 @@
 import datetime
 import logging
 import sys
+import os
+import wave
+import tempfile
 import threading
 from typing import Optional
 
+import torch
 import numpy as np
 import sounddevice
-from PyQt6.QtCore import QObject, pyqtSignal
 from sounddevice import PortAudioError
+from openai import OpenAI
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from buzz import transformers_whisper, whisper_audio
-from buzz.model_loader import ModelType
-from buzz.transcriber.transcriber import TranscriptionOptions
+from buzz.model_loader import WhisperModelSize, ModelType, get_custom_api_whisper_model
+from buzz.settings.settings import Settings
+from buzz.transcriber.transcriber import TranscriptionOptions, Task
 from buzz.transcriber.whisper_cpp import WhisperCpp, whisper_cpp_params
 from buzz.transformers_whisper import TransformersWhisper
 
 import whisper
+import faster_whisper
 
 
 class RecordingTranscriber(QObject):
@@ -32,29 +39,55 @@ class RecordingTranscriber(QObject):
         input_device_index: Optional[int],
         sample_rate: int,
         model_path: str,
+        sounddevice: sounddevice,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
         self.transcription_options = transcription_options
         self.current_stream = None
         self.input_device_index = input_device_index
-        self.sample_rate = sample_rate
+        self.sample_rate = sample_rate if sample_rate is not None else whisper_audio.SAMPLE_RATE
         self.model_path = model_path
         self.n_batch_samples = 5 * self.sample_rate  # every 5 seconds
         # pause queueing if more than 3 batches behind
         self.max_queue_size = 3 * self.n_batch_samples
         self.queue = np.ndarray([], dtype=np.float32)
         self.mutex = threading.Lock()
+        self.sounddevice = sounddevice
+        self.openai_client = None
+        self.whisper_api_model = get_custom_api_whisper_model("")
 
     def start(self):
         model_path = self.model_path
+        keep_samples = int(0.15 * self.sample_rate)
 
         if self.transcription_options.model.model_type == ModelType.WHISPER:
-            model = whisper.load_model(model_path)
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = whisper.load_model(model_path, device=device)
         elif self.transcription_options.model.model_type == ModelType.WHISPER_CPP:
             model = WhisperCpp(model_path)
+        elif self.transcription_options.model.model_type == ModelType.FASTER_WHISPER:
+            model = faster_whisper.WhisperModel(model_path)
+
+            # Fix for large-v3 https://github.com/guillaumekln/faster-whisper/issues/547#issuecomment-1797962599
+            if self.transcription_options.model.whisper_model_size == WhisperModelSize.LARGEV3:
+                model.feature_extractor.mel_filters = model.feature_extractor.get_mel_filters(
+                    model.feature_extractor.sampling_rate, model.feature_extractor.n_fft, n_mels=128
+                )
+        elif self.transcription_options.model.model_type == ModelType.OPEN_AI_WHISPER_API:
+            settings = Settings()
+            custom_openai_base_url = settings.value(
+                key=Settings.Key.CUSTOM_OPENAI_BASE_URL, default_value=""
+            )
+            self.whisper_api_model = get_custom_api_whisper_model(custom_openai_base_url)
+            self.openai_client = OpenAI(
+                api_key=self.transcription_options.openai_access_token,
+                base_url=custom_openai_base_url if custom_openai_base_url else None
+            )
+            logging.debug("Will use whisper API on %s, %s",
+                          custom_openai_base_url, self.whisper_api_model)
         else:  # ModelType.HUGGING_FACE
-            model = transformers_whisper.load_model(model_path)
+            model = TransformersWhisper(model_path)
 
         initial_prompt = self.transcription_options.initial_prompt
 
@@ -68,7 +101,7 @@ class RecordingTranscriber(QObject):
 
         self.is_running = True
         try:
-            with sounddevice.InputStream(
+            with self.sounddevice.InputStream(
                 samplerate=self.sample_rate,
                 device=self.input_device_index,
                 dtype="float32",
@@ -79,7 +112,7 @@ class RecordingTranscriber(QObject):
                     self.mutex.acquire()
                     if self.queue.size >= self.n_batch_samples:
                         samples = self.queue[: self.n_batch_samples]
-                        self.queue = self.queue[self.n_batch_samples :]
+                        self.queue = self.queue[self.n_batch_samples - keep_samples:]
                         self.mutex.release()
 
                         logging.debug(
@@ -113,7 +146,26 @@ class RecordingTranscriber(QObject):
                                     transcription_options=self.transcription_options
                                 ),
                             )
-                        else:
+                        elif (
+                                self.transcription_options.model.model_type
+                                == ModelType.FASTER_WHISPER
+                        ):
+                            assert isinstance(model, faster_whisper.WhisperModel)
+                            whisper_segments, info = model.transcribe(
+                                audio=samples,
+                                language=self.transcription_options.language
+                                if self.transcription_options.language != ""
+                                else None,
+                                task=self.transcription_options.task.value,
+                                temperature=self.transcription_options.temperature,
+                                initial_prompt=self.transcription_options.initial_prompt,
+                                word_timestamps=self.transcription_options.word_level_timings,
+                            )
+                            result = {"text": " ".join([segment.text for segment in whisper_segments])}
+                        elif (
+                                self.transcription_options.model.model_type
+                                == ModelType.HUGGING_FACE
+                        ):
                             assert isinstance(model, TransformersWhisper)
                             result = model.transcribe(
                                 audio=samples,
@@ -122,6 +174,44 @@ class RecordingTranscriber(QObject):
                                 else "en",
                                 task=self.transcription_options.task.value,
                             )
+                        else:  # OPEN_AI_WHISPER_API
+                            assert self.openai_client is not None
+                            # scale samples to 16-bit PCM
+                            pcm_data = (samples * 32767).astype(np.int16).tobytes()
+
+                            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                            temp_filename = temp_file.name
+
+                            with wave.open(temp_filename, 'wb') as wf:
+                                wf.setnchannels(1)
+                                wf.setsampwidth(2)
+                                wf.setframerate(self.sample_rate)
+                                wf.writeframes(pcm_data)
+
+                            with open(temp_filename, 'rb') as temp_file:
+                                options = {
+                                    "model": self.whisper_api_model,
+                                    "file": temp_file,
+                                    "response_format": "verbose_json",
+                                    "prompt": self.transcription_options.initial_prompt,
+                                }
+
+                                try:
+                                    transcript = (
+                                        self.openai_client.audio.transcriptions.create(
+                                            **options,
+                                            language=self.transcription_options.language,
+                                        )
+                                        if self.transcription_options.task == Task.TRANSCRIBE
+                                        else self.openai_client.audio.translations.create(**options)
+                                    )
+
+                                    result = {"text": " ".join(
+                                        [segment["text"] for segment in transcript.model_extra["segments"]])}
+                                except Exception as e:
+                                    result = {"text": f"Error: {str(e)}"}
+
+                            os.unlink(temp_filename)
 
                         next_text: str = result.get("text")
 

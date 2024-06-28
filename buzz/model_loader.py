@@ -37,16 +37,24 @@ os.makedirs(model_root_dir, exist_ok=True)
 
 logging.debug("Model root directory: %s", model_root_dir)
 
+
 class WhisperModelSize(str, enum.Enum):
     TINY = "tiny"
     BASE = "base"
     SMALL = "small"
     MEDIUM = "medium"
     LARGE = "large"
+    LARGEV2 = "large-v2"
+    LARGEV3 = "large-v3"
 
     def to_faster_whisper_model_size(self) -> str:
         if self == WhisperModelSize.LARGE:
-            return "large-v2"
+            return "large-v1"
+        return self.value
+
+    def to_whisper_cpp_model_size(self) -> str:
+        if self == WhisperModelSize.LARGE:
+            return "large-v1"
         return self.value
 
     def __str__(self):
@@ -68,10 +76,6 @@ class ModelType(enum.Enum):
             ModelType.OPEN_AI_WHISPER_API,
             ModelType.FASTER_WHISPER,
         )
-
-    def supports_recording(self):
-        # Live transcription with OpenAI Whisper API not supported
-        return self != ModelType.OPEN_AI_WHISPER_API
 
     def is_available(self):
         if (
@@ -110,7 +114,7 @@ HUGGING_FACE_MODEL_ALLOW_PATTERNS = [
 class TranscriptionModel:
     model_type: ModelType = ModelType.WHISPER
     whisper_model_size: Optional[WhisperModelSize] = WhisperModelSize.TINY
-    hugging_face_model_id: Optional[str] = None
+    hugging_face_model_id: Optional[str] = "openai/whisper-tiny"
 
     def __str__(self):
         match self.model_type:
@@ -201,7 +205,9 @@ WHISPER_CPP_MODELS_SHA256 = {
     "base": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
     "small": "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
     "medium": "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
-    "large": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+    "large-v1": "7d99f41a10525d0206bddadd86760181fa920438b6b33237e3118ff6c83bb53d",
+    "large-v2": "9a423fe4d40c82774b6af34115b8b935f34152246eb19e80e376071d3f999487",
+    "large-v3": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
 }
 
 
@@ -210,9 +216,7 @@ def get_whisper_cpp_file_path(size: WhisperModelSize) -> str:
 
 
 def get_whisper_file_path(size: WhisperModelSize) -> str:
-    root_dir = os.getenv(
-        "XDG_CACHE_HOME", os.path.join(os.path.expanduser("~"), ".cache", "whisper")
-    )
+    root_dir = os.path.join(model_root_dir, "whisper")
     url = whisper._MODELS[size.value]
     return os.path.join(root_dir, os.path.basename(url))
 
@@ -318,13 +322,19 @@ def download_faster_whisper_model(
             % (size, ", ".join(faster_whisper.utils._MODELS))
         )
 
-    repo_id = "guillaumekln/faster-whisper-%s" % size
+    logging.debug("Downloading Faster Whisper model: %s", size)
+
+    if size == WhisperModelSize.LARGEV3:
+        repo_id = "Systran/faster-whisper-large-v3"
+    else:
+        repo_id = "guillaumekln/faster-whisper-%s" % size
 
     allow_patterns = [
         "model.bin",  # largest by size first
         "config.json",
         "tokenizer.json",
         "vocabulary.txt",
+        "vocabulary.json",
     ]
 
     if local_files_only:
@@ -357,7 +367,7 @@ class ModelDownloader(QRunnable):
 
     def run(self) -> None:
         if self.model.model_type == ModelType.WHISPER_CPP:
-            model_name = self.model.whisper_model_size.value
+            model_name = self.model.whisper_model_size.to_whisper_cpp_model_size()
             url = huggingface_hub.hf_hub_url(
                 repo_id="ggerganov/whisper.cpp",
                 filename=f"ggml-{model_name}.bin",
@@ -472,3 +482,10 @@ class ModelDownloader(QRunnable):
 
     def cancel(self):
         self.stopped = True
+
+
+def get_custom_api_whisper_model(base_url: str):
+    if "api.groq.com" in base_url:
+        return "whisper-large-v3"
+
+    return "whisper-1"

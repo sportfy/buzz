@@ -8,6 +8,8 @@ from typing import Optional, List
 from PyQt6.QtCore import QObject
 from openai import OpenAI
 
+from buzz.settings.settings import Settings
+from buzz.model_loader import get_custom_api_whisper_model
 from buzz.transcriber.file_transcriber import FileTranscriber
 from buzz.transcriber.transcriber import FileTranscriptionTask, Segment, Task
 
@@ -15,10 +17,18 @@ from buzz.transcriber.transcriber import FileTranscriptionTask, Segment, Task
 class OpenAIWhisperAPIFileTranscriber(FileTranscriber):
     def __init__(self, task: FileTranscriptionTask, parent: Optional["QObject"] = None):
         super().__init__(task=task, parent=parent)
+        settings = Settings()
+        custom_openai_base_url = settings.value(
+            key=Settings.Key.CUSTOM_OPENAI_BASE_URL, default_value=""
+        )
         self.task = task.transcription_options.task
         self.openai_client = OpenAI(
-            api_key=self.transcription_task.transcription_options.openai_access_token
+            api_key=self.transcription_task.transcription_options.openai_access_token,
+            base_url=custom_openai_base_url if custom_openai_base_url else None
         )
+        self.whisper_api_model = get_custom_api_whisper_model(custom_openai_base_url)
+        logging.debug("Will use whisper API on %s, %s",
+                      custom_openai_base_url, self.whisper_api_model)
 
     def transcribe(self) -> List[Segment]:
         logging.debug(
@@ -97,7 +107,7 @@ class OpenAIWhisperAPIFileTranscriber(FileTranscriber):
     def get_segments_for_file(self, file: str, offset_ms: int = 0):
         with open(file, "rb") as file:
             options = {
-                "model": "whisper-1",
+                "model": self.whisper_api_model,
                 "file": file,
                 "response_format": "verbose_json",
                 "prompt": self.transcription_task.transcription_options.initial_prompt,

@@ -66,6 +66,8 @@ class PreferencesDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             self,
         )
+        button_box.button(QDialogButtonBox.StandardButton.Ok).setText(_("Ok"))
+        button_box.button(QDialogButtonBox.StandardButton.Cancel).setText(_("Cancel"))
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
 
@@ -75,4 +77,4 @@ class PreferencesDialog(QDialog):
         self.setLayout(layout)
 
         self.setMinimumHeight(500)
-        self.setMinimumWidth(500)
+        self.setMinimumWidth(550)

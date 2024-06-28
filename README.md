@@ -40,6 +40,10 @@ Download and run the `.exe` file in the [releases page](https://github.com/chidi
 **Linux**:
 
 ```shell
-sudo apt-get install libportaudio2
+sudo apt-get install libportaudio2 libcanberra-gtk-module libcanberra-gtk3-module
 sudo snap install buzz
+sudo snap connect buzz:audio-record
+sudo snap connect buzz:password-manager-service
+sudo snap connect buzz:pulseaudio
+sudo snap connect buzz:removable-media
 ```

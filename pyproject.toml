@@ -5,14 +5,14 @@ description = ""
 authors = ["Chidi Williams <williamschidi1@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-include = ["buzz/libwhisper.*", "buzz/whisper_cpp.py"]
+include = ["buzz/libwhisper.*", "buzz/whisper_cpp.py", "buzz/locale/*/LC_MESSAGES/buzz.mo"]
 repository = "https://github.com/chidiwilliams/buzz"
 packages = [
     { include = "buzz" },
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.9.13,<3.11"
+python = ">=3.9.13,<3.13"
 sounddevice = "^0.4.5"
 humanize = "^4.4.0"
 PyQt6 = "^6.4.0"

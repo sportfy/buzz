@@ -18,6 +18,7 @@ from buzz.locale import _
 from buzz.db.entity.transcription import Transcription
 from buzz.db.service.transcription_service import TranscriptionService
 from buzz.widgets.main_window import MainWindow
+from buzz.widgets.snap_notice import SnapNotice
 from buzz.widgets.transcriber.file_transcriber_widget import FileTranscriberWidget
 from buzz.widgets.transcription_viewer.transcription_viewer_widget import (
     TranscriptionViewerWidget,
@@ -161,7 +162,7 @@ class TestMainWindow:
         table_widget = self._get_tasks_table(window)
         table_widget.selectAll()
 
-        with patch("PyQt6.QtWidgets.QMessageBox.question") as question_message_box_mock:
+        with patch("PyQt6.QtWidgets.QMessageBox.exec") as question_message_box_mock:
             question_message_box_mock.return_value = QMessageBox.StandardButton.Yes
             window.toolbar.clear_history_action.trigger()
 
@@ -284,3 +285,12 @@ class TestMainWindow:
     def _get_toolbar_action(window: MainWindow, text: str):
         toolbar: QToolBar = window.findChild(QToolBar)
         return [action for action in toolbar.actions() if action.text() == text][0]
+
+    def test_snap_notice_dialog(self, qtbot: QtBot):
+        snap_notice = SnapNotice()
+        snap_notice.show()
+
+        qtbot.wait_until(lambda: snap_notice.isVisible(), timeout=1000)
+
+        snap_notice.close()
+        assert not snap_notice.isVisible()

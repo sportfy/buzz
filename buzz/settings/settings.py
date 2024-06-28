@@ -11,7 +11,7 @@ class Settings:
     def __init__(self, application=""):
         self.settings = QSettings(APP_NAME, application)
         self.settings.sync()
-        logging.debug(f"settings filename: {self.settings.fileName()}")
+        logging.debug(f"Settings filename: {self.settings.fileName()}")
 
     class Key(enum.Enum):
         RECORDING_TRANSCRIBER_TASK = "recording-transcriber/task"
@@ -19,16 +19,25 @@ class Settings:
         RECORDING_TRANSCRIBER_LANGUAGE = "recording-transcriber/language"
         RECORDING_TRANSCRIBER_TEMPERATURE = "recording-transcriber/temperature"
         RECORDING_TRANSCRIBER_INITIAL_PROMPT = "recording-transcriber/initial-prompt"
+        RECORDING_TRANSCRIBER_ENABLE_LLM_TRANSLATION = "recording-transcriber/enable-llm-translation"
+        RECORDING_TRANSCRIBER_LLM_MODEL = "recording-transcriber/llm-model"
+        RECORDING_TRANSCRIBER_LLM_PROMPT = "recording-transcriber/llm-prompt"
+        RECORDING_TRANSCRIBER_EXPORT_ENABLED = "recording-transcriber/export-enabled"
+        RECORDING_TRANSCRIBER_EXPORT_FOLDER = "recording-transcriber/export-folder"
 
         FILE_TRANSCRIBER_TASK = "file-transcriber/task"
         FILE_TRANSCRIBER_MODEL = "file-transcriber/model"
         FILE_TRANSCRIBER_LANGUAGE = "file-transcriber/language"
         FILE_TRANSCRIBER_TEMPERATURE = "file-transcriber/temperature"
         FILE_TRANSCRIBER_INITIAL_PROMPT = "file-transcriber/initial-prompt"
+        FILE_TRANSCRIBER_ENABLE_LLM_TRANSLATION = "file-transcriber/enable-llm-translation"
+        FILE_TRANSCRIBER_LLM_MODEL = "file-transcriber/llm-model"
+        FILE_TRANSCRIBER_LLM_PROMPT = "file-transcriber/llm-prompt"
         FILE_TRANSCRIBER_WORD_LEVEL_TIMINGS = "file-transcriber/word-level-timings"
         FILE_TRANSCRIBER_EXPORT_FORMATS = "file-transcriber/export-formats"
 
         DEFAULT_EXPORT_FILE_NAME = "transcriber/default-export-file-name"
+        CUSTOM_OPENAI_BASE_URL = "transcriber/custom-openai-base-url"
 
         SHORTCUTS = "shortcuts"
 

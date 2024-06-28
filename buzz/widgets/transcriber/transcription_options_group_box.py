@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, List
 
 from PyQt6.QtCore import pyqtSignal
@@ -39,6 +40,13 @@ class TranscriptionOptionsGroupBox(QGroupBox):
         )
         self.model_type_combo_box.changed.connect(self.on_model_type_changed)
 
+        self.advanced_settings_dialog = AdvancedSettingsDialog(
+            transcription_options=self.transcription_options, parent=self
+        )
+        self.advanced_settings_dialog.transcription_options_changed.connect(
+            self.on_transcription_options_changed
+        )
+
         self.whisper_model_size_combo_box = QComboBox(self)
         self.whisper_model_size_combo_box.addItems(
             [size.value.title() for size in WhisperModelSize]
@@ -58,7 +66,9 @@ class TranscriptionOptionsGroupBox(QGroupBox):
             self.on_openai_access_token_edit_changed
         )
 
-        self.hugging_face_search_line_edit = HuggingFaceSearchLineEdit()
+        self.hugging_face_search_line_edit = HuggingFaceSearchLineEdit(
+            default_value=default_transcription_options.model.hugging_face_model_id
+        )
         self.hugging_face_search_line_edit.model_selected.connect(
             self.on_hugging_face_model_changed
         )
@@ -79,7 +89,7 @@ class TranscriptionOptionsGroupBox(QGroupBox):
         self.form_layout.addRow(_("Model:"), self.model_type_combo_box)
         self.form_layout.addRow("", self.whisper_model_size_combo_box)
         self.form_layout.addRow("", self.hugging_face_search_line_edit)
-        self.form_layout.addRow("Access Token:", self.openai_access_token_edit)
+        self.form_layout.addRow(_("Api Key:"), self.openai_access_token_edit)
         self.form_layout.addRow(_("Task:"), self.tasks_combo_box)
         self.form_layout.addRow(_("Language:"), self.languages_combo_box)
 
@@ -102,13 +112,7 @@ class TranscriptionOptionsGroupBox(QGroupBox):
         self.transcription_options_changed.emit(self.transcription_options)
 
     def open_advanced_settings(self):
-        dialog = AdvancedSettingsDialog(
-            transcription_options=self.transcription_options, parent=self
-        )
-        dialog.transcription_options_changed.connect(
-            self.on_transcription_options_changed
-        )
-        dialog.exec()
+        self.advanced_settings_dialog.exec()
 
     def on_transcription_options_changed(
         self, transcription_options: TranscriptionOptions
